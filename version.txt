@@ -1,0 +1,115 @@
+#include <ESP8266WiFi.h>
+#include <WiFiManager.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+#include <ESP8266httpUpdate.h>
+#include <ESP8266HTTPClient.h>
+
+// --- VERSIÓN ---
+#define VERSION_ACTUAL "1.0.0" 
+
+Adafruit_SSD1306 display(128, 64, &Wire, -1);
+
+const char* urlVersion PROGMEM = "https://raw.githubusercontent.com/tiendader/Tiendader_ESTUDIO/main/version.txt";
+const char* urlBinario PROGMEM = "https://raw.githubusercontent.com/tiendader/Tiendader_ESTUDIO/main/D1mini_SSD1306_Emojis.ino.bin";
+
+void mostrar(const __FlashStringHelper* texto) {
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setCursor(0, 10);
+  display.println(texto);
+  display.display();
+}
+
+void verificarUpdate() {
+  // 1. Mensaje amigable para el cliente
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setCursor(0, 10);
+  display.println(F("Verificando Version"));
+  display.print(F("Version actual "));
+  display.println(VERSION_ACTUAL);
+  display.display();
+  
+  // Un pequeño delay para que el cliente alcance a leer la versión actual
+  delay(2000);
+
+  WiFiClientSecure client;
+  client.setInsecure(); 
+  client.setBufferSizes(2048, 512); 
+  client.setTimeout(15000);
+
+  HTTPClient https;
+  String urlTxt = FPSTR(urlVersion);
+  urlTxt += "?v=" + String(random(100, 999));
+
+  if (https.begin(client, urlTxt)) {
+    https.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+    int httpCode = https.GET();
+
+    if (httpCode == HTTP_CODE_OK) {
+      String versionGithub = https.getString();
+      versionGithub.trim();
+
+      // 2. Si hay una versión distinta, procedemos
+      if (versionGithub != VERSION_ACTUAL && versionGithub.length() > 0) {
+        display.clearDisplay();
+        display.setCursor(0, 10);
+        display.println(F("Nueva Version!"));
+        display.println(F("Actualizando..."));
+        display.println(F("No desconectar"));
+        display.display();
+
+        https.end(); 
+
+        ESPhttpUpdate.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+        // Si tiene éxito, el ESP se reinicia solo.
+        ESPhttpUpdate.update(client, FPSTR(urlBinario));
+      }
+    }
+    https.end();
+  }
+
+  // 3. SILENCIO: Si llegamos aquí es porque no hubo update o hubo error.
+  // Limpiamos pantalla y dejamos que el programa siga.
+  display.clearDisplay();
+  display.display();
+}
+
+void setup() {
+  Serial.begin(115200);
+  if(!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) { for(;;); }
+  display.setTextColor(SSD1306_WHITE);
+
+  mostrar(F("Conectando..."));
+
+  WiFiManager wm;
+  wm.setBreakAfterConfig(true);
+  if (!wm.autoConnect("TiendaDer_Config")) {
+    delay(3000);
+    ESP.restart();
+  }
+
+  WiFi.mode(WIFI_STA);
+  
+  // Espera para estabilizar conexión
+  for(int i=0; i<5; i++){ delay(1000); yield(); }
+
+  // Llamada al verificador
+  verificarUpdate();
+}
+
+void loop() {
+  static unsigned long last = 0;
+  if (millis() - last > 1500) {
+    last = millis();
+    display.clearDisplay();
+    display.setTextSize(4);
+    display.setCursor(30, 15);
+    int r = random(0, 3);
+    if(r==0) display.print(F(":)"));
+    else if(r==1) display.print(F("XD"));
+    else display.print(F("O_O"));
+    display.display();
+  }
+}
